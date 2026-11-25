@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useEffect, useRef, useState } from 'react';
 import { Text, View } from 'react-native';
 import { RequestPayload } from '@/ble/codec';
 import { useDevice } from '@/devices/DeviceContext';
@@ -7,9 +8,10 @@ import { Btn, Card, Field, styles } from './ui';
 
 // Board only notifies when a move ends; poll while moving to show live position.
 const POLL_MS = 500;
+const byCmKey = (deviceId: string) => `scroll.byCm.${deviceId}`;
 
 export function ScrollServoPanel() {
-  const { info, status, state, request } = useDevice();
+  const { deviceId, info, status, state, request } = useDevice();
   const scroll = status?.scroll;
   const moving = scroll?.moving ?? false;
   const minMm = info?.scrollMinMm ?? 0;
@@ -20,6 +22,34 @@ export function ScrollServoPanel() {
   const [byCm, setByCm] = useState('5');
   const [toCm, setToCm] = useState('0');
   const [setCm, setSetCm] = useState('0');
+  /** Loop = clockwise by distance, then back to 0. True while the outbound move runs. */
+  const [looping, setLooping] = useState(false);
+  const loopCancel = useRef(false);
+  const byLoaded = useRef(false);
+
+  // Remember the Scroll by distance per device across connects.
+  useEffect(() => {
+    if (!deviceId) return;
+    byLoaded.current = false;
+    let cancelled = false;
+    AsyncStorage.getItem(byCmKey(deviceId))
+      .then((v) => {
+        if (!cancelled && v !== null) setByCm(v);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) byLoaded.current = true;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [deviceId]);
+
+  useEffect(() => {
+    if (!deviceId || !byLoaded.current) return;
+    AsyncStorage.setItem(byCmKey(deviceId), byCm).catch(() => {});
+  }, [deviceId, byCm]);
+
 
   useEffect(() => {
     if (!connected || !moving) return;
@@ -43,6 +73,27 @@ export function ScrollServoPanel() {
   const byValid = byMm !== null && byMm > 0;
   const cwOk = byValid && inRange(pos + byMm!, minMm, maxMm);
   const ccwOk = byValid && inRange(pos - byMm!, minMm, maxMm);
+  const atZero = scroll !== undefined && pos === 0;
+  const loopOk = atZero && cwOk;
+
+  // Board rejects ScrollTo while moving (busy), so wait for the outbound move to end.
+  const startLoop = async () => {
+    loopCancel.current = false;
+    setLooping(true);
+    try {
+      let r = await request({ $case: 'moveScroll', moveScroll: { deltaMm: byMm! } });
+      const isMoving = () => r.payload?.$case === 'status' && (r.payload.status.scroll?.moving ?? false);
+      while (isMoving() && !loopCancel.current) {
+        await new Promise((ok) => setTimeout(ok, POLL_MS));
+        r = await request({ $case: 'getStatus', getStatus: {} });
+      }
+      if (!loopCancel.current) await request({ $case: 'scrollTo', scrollTo: { positionMm: 0 } });
+    } catch {
+      // banner; disconnect also lands here
+    } finally {
+      setLooping(false);
+    }
+  };
   const toMm = cmToMm(toCm);
   const toValid = toMm !== null && inRange(toMm, minMm, maxMm);
   const setMm = cmToMm(setCm);
@@ -61,7 +112,10 @@ export function ScrollServoPanel() {
           title="Stop"
           variant="danger"
           disabled={!connected || !moving}
-          onPress={() => void send({ $case: 'stopScroll', stopScroll: {} })}
+          onPress={() => {
+            loopCancel.current = true;
+            void send({ $case: 'stopScroll', stopScroll: {} });
+          }}
         />
       </Card>
 
@@ -69,18 +123,27 @@ export function ScrollServoPanel() {
         <Field label="Distance" suffix="cm" value={byCm} onChangeText={setByCm} keyboardType="decimal-pad" />
         <View style={styles.row}>
           <Btn
+            title={looping ? 'Looping…' : '⟳ Loop'}
+            disabled={busy || moving || looping || !loopOk}
+            onPress={() => void startLoop()}
+          />
+          <Btn
             title="↻ Clockwise"
-            disabled={busy || !cwOk}
+            disabled={busy || looping || !cwOk}
             onPress={() => void send({ $case: 'moveScroll', moveScroll: { deltaMm: byMm! } })}
           />
           <Btn
             title="↺ Reverse"
             variant="secondary"
-            disabled={busy || !ccwOk}
+            disabled={busy || looping || !ccwOk}
             onPress={() => void send({ $case: 'moveScroll', moveScroll: { deltaMm: -byMm! } })}
           />
         </View>
         {byValid && (!cwOk || !ccwOk) && <Text style={styles.muted}>Would leave range {range}.</Text>}
+        <Text style={styles.muted}>
+          Loop: clockwise by distance, then back to 0 cm (push and release).
+          {scroll && !atZero && !moving ? ' Only from 0 cm: go to 0 cm first.' : ''}
+        </Text>
       </Card>
 
       <Card title="Go to position">
