@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router';
 import { useEffect } from 'react';
-import { ActivityIndicator, AppState, ScrollView, Text } from 'react-native';
+import { ActivityIndicator, ScrollView, Text } from 'react-native';
 import { ButtonTesterPanel } from '@/components/ButtonTesterPanel';
 import { DeviceHeader } from '@/components/DeviceHeader';
 import { PowerBoardPanel } from '@/components/PowerBoardPanel';
@@ -13,19 +13,10 @@ import { Profile } from '@/proto/power_board';
 
 export default function DeviceScreen() {
   const { deviceName, state, info, disconnect } = useDevice();
-  const battery = (info?.sleepIntervalS ?? 0) > 0;
 
-  // Leaving the device screen ends the session: battery devices stay at full power
-  // while connected, so never hold the link in the background.
+  // Leaving the device screen ends the session. Backgrounding the app does not:
+  // DeviceProvider keeps the link alive and drops it after IDLE_TIMEOUT_MS idle.
   useEffect(() => () => void disconnect(), [disconnect]);
-
-  useEffect(() => {
-    if (!battery) return;
-    const sub = AppState.addEventListener('change', (s) => {
-      if (s === 'background') void disconnect();
-    });
-    return () => sub.remove();
-  }, [battery, disconnect]);
 
   let body;
   if (!info) {

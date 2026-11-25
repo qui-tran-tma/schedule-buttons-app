@@ -1,7 +1,9 @@
 // Connection + latest Status for the one connected board.
+import { AppState } from 'react-native';
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { BoardClient } from '@/ble/client';
 import { RequestPayload } from '@/ble/codec';
+import { IDLE_TIMEOUT_MS, KEEPALIVE_MS } from '@/ble/constants';
 import { getManager, requestBlePermissions, waitPoweredOn } from '@/ble/manager';
 import { DeviceInfo, Response, Status } from '@/proto/power_board';
 
@@ -32,6 +34,8 @@ export function errorMessage(e: unknown): string {
 
 export function DeviceProvider({ children }: { children: ReactNode }) {
   const clientRef = useRef<BoardClient | null>(null);
+  /** Last user request or app background/foreground switch. Keepalives do not count. */
+  const lastActivityRef = useRef(0);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [deviceName, setDeviceName] = useState<string | null>(null);
   const [state, setState] = useState<ConnState>('disconnected');
@@ -56,6 +60,7 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
       setStatus(null);
       setError(null);
       setState('connecting');
+      lastActivityRef.current = Date.now();
       try {
         if (!(await requestBlePermissions())) throw new Error('Bluetooth permission denied');
         await waitPoweredOn();
@@ -105,6 +110,7 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
       setError(e.message);
       throw e;
     }
+    lastActivityRef.current = Date.now();
     try {
       return await c.request(payload);
     } catch (e) {
@@ -114,6 +120,35 @@ export function DeviceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => () => void clientRef.current?.disconnect(), []);
+
+  // Hold the link while connected, foreground or background, until the user disconnects
+  // or IDLE_TIMEOUT_MS passes with no user request. Keepalive GetStatus resets the board's
+  // own idle_disconnect_s timer (60-180 s on battery boards).
+  useEffect(() => {
+    if (state !== 'connected') return;
+    const idleCheck = () => {
+      if (Date.now() - lastActivityRef.current < IDLE_TIMEOUT_MS) return false;
+      setError(`Disconnected after ${IDLE_TIMEOUT_MS / 60000} min idle`);
+      void disconnect();
+      return true;
+    };
+    const timer = setInterval(() => {
+      if (idleCheck()) return;
+      clientRef.current?.request({ $case: 'getStatus', getStatus: {} }).catch(() => {
+        // Ignore: a lost link reports through onDisconnect.
+      });
+    }, KEEPALIVE_MS);
+    const sub = AppState.addEventListener('change', (s) => {
+      // iOS suspends JS timers in background: check elapsed time on return first.
+      if (s === 'active' && idleCheck()) return;
+      // Switching away (or back) restarts the 5 min window.
+      if (s === 'active' || s === 'background') lastActivityRef.current = Date.now();
+    });
+    return () => {
+      clearInterval(timer);
+      sub.remove();
+    };
+  }, [state, disconnect]);
 
   const value = useMemo<DeviceContextValue>(
     () => ({

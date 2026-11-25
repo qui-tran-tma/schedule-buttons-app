@@ -9,3 +9,7 @@ export const ANDROID_MTU = 185;
 /** protocol::kMaxFrame on the board */
 export const MAX_FRAME = 128;
 export const REQUEST_TIMEOUT_MS = 3000;
+/** App drops the link after this long with no user request (also covers time in background). */
+export const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+/** Keepalive GetStatus period. Below the shortest board idle_disconnect_s (60 s) so the board never drops first. */
+export const KEEPALIVE_MS = 20 * 1000;

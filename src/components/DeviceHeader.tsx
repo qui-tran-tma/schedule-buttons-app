@@ -1,4 +1,5 @@
 import { Text, View } from 'react-native';
+import { IDLE_TIMEOUT_MS } from '@/ble/constants';
 import { useDevice } from '@/devices/DeviceContext';
 import { formatBoardClock } from '@/devices/schedules';
 import { Profile } from '@/proto/power_board';
@@ -41,8 +42,8 @@ export function DeviceHeader() {
         </View>
         {info && info.sleepIntervalS > 0 && (
           <Text style={styles.muted}>
-            Battery device: full power while connected. Disconnects after {info.idleDisconnectS}s idle,
-            then sleeps (wakes every {info.sleepIntervalS}s).
+            Battery device: full power while connected. App disconnects after {IDLE_TIMEOUT_MS / 60000} min
+            idle, then the board sleeps (wakes every {info.sleepIntervalS}s).
           </Text>
         )}
         {status && (
