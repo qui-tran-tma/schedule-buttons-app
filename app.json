@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "Schedule Buttons",
+    "slug": "schedule-buttons-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.quitran.schedulebuttons"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#16213E",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.quitran.schedulebuttons"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "modes": [],
+          "neverForLocation": true,
+          "bluetoothAlwaysPermission": "Allow Schedule Buttons to connect to your home BLE devices (power board, button pusher)."
+        }
+      ],
+      "expo-status-bar"
+    ],
+    "scheme": "schedulebuttons",
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

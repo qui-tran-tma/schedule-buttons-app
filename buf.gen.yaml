@@ -1,0 +1,14 @@
+# ts-proto codegen. Input proto lives in the firmware repo (source of truth):
+#   npm run proto  ->  buf generate ../schedule-power-board/proto --template buf.gen.yaml
+version: v2
+clean: true
+plugins:
+  - local: protoc-gen-ts_proto
+    out: src/proto
+    opt:
+      - esModuleInterop=true
+      - forceLong=number
+      - oneof=unions
+      - outputServices=false
+      - outputJsonMethods=false
+      - env=browser
